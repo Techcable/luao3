@@ -1,60 +1,89 @@
-use darling::ast::{Style};
-use darling::FromDeriveInput;
-use proc_macro2::{TokenStream, Ident};
+use syn::{parse_quote, parse_quote_spanned, DeriveInput, spanned::Spanned};
+use proc_macro2::{TokenStream, Ident, Span};
 use quote::{quote, quote_spanned};
-use syn::{DeriveInput, parse_quote, parse_quote_spanned, spanned::Spanned};
 
 #[derive(darling::FromField, Debug)]
-pub struct FromLuaField {
+pub struct ToLuaField {
     ident: Option<syn::Ident>,
     ty: syn::Type,
-    #[darling(default, rename = "default")]
-    is_default: darling::util::Flag,
 }
 
-impl FromLuaField {
-    pub fn expand(&self, idx: u32) -> TokenStream {
-        let key = match self.ident {
-            Some(ref name) => {
-                quote!(luao3::parse_helpers::TableKey::String(stringify!(#name)))
+trait FieldAccess {
+    fn access(&self, member: syn::Member) -> Result<syn::Expr, darling::Error>;
+}
+struct SelfFieldAccess;
+impl FieldAccess for SelfFieldAccess {
+    fn access(&self, member: syn::Member) -> Result<syn::Expr, darling::Error> {
+        Ok(parse_quote_spanned!(member.span() => self.#member))
+    }
+}
+struct DestructureFieldAccess;
+impl DestructureFieldAccess {
+    pub fn destructure(
+        &self,
+        fields: darling::ast::Fields<ToLuaField>
+    ) -> Result<TokenStream, darling::Error> {
+        Ok(match fields.style {
+            darling::ast::Style::Unit => quote!(),
+            darling::ast::Style::Tuple => {
+                let field_names = (0..fields.fields.len()).map(|idx| {
+                    Ident::new(&format!("field{}", idx), Span::call_site())
+                });
+                quote! {
+                    (#(#field_names,)*)
+                }
             },
-            None => quote!(luao3::parse_helpers::TableKey::Number(#idx)),
+            darling::ast::Style::Struct => {
+                let field_names = fields.fields.iter()
+                    .map(|fd| fd.ident.as_ref().unwrap());
+                quote!({ #(ref #field_names,)* })
+            }
+        })
+    }
+}
+impl FieldAccess for DestructureFieldAccess {
+    fn access(&self, member: syn::Member) -> Result<syn::Expr, darling::Expr> {
+        let name: Ident = match member {
+            syn::Member::Named(ref name) => name.clone(),
+            syn::Member::Unnamed(ref idx) => {
+                Ident::new(&format!("field{}", idx.index), idx.span)
+            }
         };
-        let ty = &self.ty;
-        let conversion_ty = if self.is_default.is_some() {
-            parse_quote_spanned!(ty.span() => Option<#ty>)
-        } else {
-            ty.clone()
+        Ok(parse_quote!(#name))
+    } 
+}
+
+impl ToLuaField {
+    pub fn expand(&self, idx: u32, access: &dyn FieldAccess) -> Result<TokenStream, darling::Error> {
+        let member: syn::Member = match self.ident {
+            Some(ref name) => parse_quote!(#name),
+            None => parse_quote!(#idx)
         };
-        let primary_conversion = quote! {
-            luao3::parse_helpers::parse_field::<#conversion_ty>(
-                lua, TYPE_NAME,
-                &lua_table, #key
-            )?
+        let key = match self.ident {
+            Some(ref name) => quote_spanned!(name.span() => stringify!(#name)),
+            None => quote!(#idx)
         };
-        if self.is_default.is_some() {
-            let def = quote_spanned!(ty.span() => <#ty as Default>::default);
-            quote!((#primary_conversion).unwrap_or_else(#def))
-        } else {
-            primary_conversion
-        }
+        let access = access.access(member)?;
+        Ok(quote! {
+            lua_table.set(#key, &#access)?;
+        })
     }
 }
 
 #[derive(darling::FromDeriveInput, Debug)]
-pub struct FromLuaDerive {
+pub struct ToLuaDerive {
     ident: syn::Ident,
-    data: darling::ast::Data<FromLuaVariant, FromLuaField>,
+    data: darling::ast::Data<ToLuaVariant, ToLuaField>,
 }
 
 #[derive(darling::FromVariant, Debug)]
-pub struct FromLuaVariant {
+pub struct ToLuaVariant {
     ident: Ident,
-    fields: darling::ast::Fields<FromLuaField>
+    fields: darling::ast::Fields<ToLuaField>
 }
 
 pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
-    let derive = FromLuaDerive::from_derive_input(&input)?;
+    let derive = ToLuaDerive::from_derive_input(&input)?;
     let (_, ty_generics, where_clause)
         = input.generics.split_for_impl();
     let mut impl_generics = input.generics.clone();
@@ -72,18 +101,14 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
             .map(|var| {
                 let text = var.ident.to_string();
                 let ident = &var.ident;
-                quote!(#text => return Ok(#original_name::#ident))
+                quote!(#original_name::#ident => return Ok(#text.to_lua(lua)?))
             })
             .peekable();
         if match_unit_variants.peek().is_some() {
             Some(quote! {
-                if let mlua::Value::String(ref s) = lua_value {
-                    // TODO: Give more descriptive error if UTF8 conversion fails
-                    let variant_name = variant_name.to_str()?;
-                    match s {
-                        #(#match_unit_variants,)*
-                        _ => {}
-                    }
+                match self {
+                    #(#match_unit_variants,)*
+                    _ => {} // fallthrough
                 }
             })
         } else {
@@ -95,6 +120,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
     let conversion_impl = match derive.data {
         darling::ast::Data::Struct(ref fields) => {
             expand_variant(
+                &SelfFieldAccess,
                 original_name.clone(),
                 fields
             )?
@@ -151,22 +177,9 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
 }
 
 fn expand_variant(
+    access: &dyn FieldAccess,
     variant_name: Ident,
     fields: &darling::ast::Fields<FromLuaField>
 ) -> Result<TokenStream, darling::Error> {
-    let field_conversions = fields.fields.iter().enumerate()
-        .map(|(idx, fd)| fd.expand(idx as u32));
-    let field_names = fields.fields.iter()
-        .map(|fd| fd.ident.as_ref().unwrap());
-    Ok(match fields.style {
-        Style::Tuple => {
-            quote!(#variant_name(#(#field_conversions,)*))
-        }
-        Style::Struct => {
-            quote!(#variant_name {
-                #(#field_names : #field_conversions,)*
-            })
-        }
-        Style::Unit => quote!(#variant_name)
-    })
+    todo!()
 }
