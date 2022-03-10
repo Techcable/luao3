@@ -8,7 +8,7 @@ mod example1 {
     use luao3::prelude::*;
     use mlua::prelude::*;
     
-    #[derive(Debug, FromLua)]
+    #[derive(Debug, FromLua, ToLua)]
     struct Foo {
         foo: String,
         #[lua(default)]

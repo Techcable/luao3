@@ -130,7 +130,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
                 };
                 match &**variant_name {
                     #(#variant_matches)*
-                    _ => Err(mlua::Error::FromLuaConversionError {
+                    _ => return Err(mlua::Error::FromLuaConversionError {
                         from: val_tp,
                         to: target_type,
                         // NOTE: Unit variants are parsed as strings
@@ -145,7 +145,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
             fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua mlua::Lua) -> mlua::Result<Self> {
                 const TYPE_NAME: &'static str = std::any::type_name::<#original_name #ty_generics>();
                 #handle_unit_variants
-                let lua_table = luao3::parse_helpers::expect_table(lua, TYPE_NAME);
+                let lua_table = luao3::parse_helpers::expect_table(lua_value, TYPE_NAME)?;
                 Ok(#conversion_impl)
             }
         }

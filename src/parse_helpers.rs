@@ -24,13 +24,13 @@ pub fn expect_table<'lua>(
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum TableKey {
-    Str(&'static str),
+    String(&'static str),
     Number(u32),
 }
 impl<'lua> mlua::ToLua<'lua> for TableKey {
     fn to_lua(self, lua: &'lua Lua) -> mlua::Result<Value<'lua>> {
         match self {
-            TableKey::Str(val) => val.to_lua(lua),
+            TableKey::String(val) => val.to_lua(lua),
             TableKey::Number(val) => val.to_lua(lua)
         }
     }
@@ -38,7 +38,7 @@ impl<'lua> mlua::ToLua<'lua> for TableKey {
 impl Display for TableKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
-            TableKey::Str(s) => f.write_str(s),
+            TableKey::String(s) => f.write_str(s),
             TableKey::Number(val) => write!(f, "{val}"),
         }
     }
