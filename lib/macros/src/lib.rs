@@ -1,4 +1,6 @@
 //! Proc macros for luao3
+use darling::FromMeta;
+use func::LuaFunctionMeta;
 use proc_macro::TokenStream as RawTokenStream;
 use syn::parse_macro_input;
 
@@ -18,9 +20,13 @@ pub fn derive_from_lua(input: RawTokenStream) -> RawTokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn lua_function(attr: RawTokenStream, item: RawTokenStream) -> RawTokenStream {
-    match func::expand(func::LuaFunctionMeta) {
-
+pub fn lua_function(args: RawTokenStream, item: RawTokenStream) -> RawTokenStream {
+    let args = parse_macro_input!(args as syn::AttributeArgs);
+    let item = parse_macro_input!(item as syn::Item);
+    match LuaFunctionMeta::from_list(&*args)
+        .and_then(|meta| func::expand(meta, item)) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.write_errors().into()
     }
 }
 
