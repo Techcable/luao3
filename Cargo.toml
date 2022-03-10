@@ -1,0 +1,25 @@
+[package]
+name = "luao3"
+version = "0.1.0"
+edition = "2021"
+# panic in const contexts ;)
+rust-version = "1.57"
+
+[dependencies]
+luao3-macros = { version = "0.1", path = "lib/macros" }
+
+[dependencies.mlua]
+version = "0.7"
+features = ["macros"]
+
+[features]
+# TODO: This is needed so IntellIJ will work :(
+default = ["lua54"]
+luajit = ["mlua/luajit"]
+lua51 = ["mlua/lua51"]
+lua52 = ["mlua/lua52"]
+lua53 = ["mlua/lua53"]
+lua54 = ["mlua/lua54"]
+module = ["mlua/module"]
+
+[workspace]
