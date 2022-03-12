@@ -22,7 +22,7 @@ macro_rules! require_matches {
 }
 
 /// Valid names for the lua parameter
-const VALID_LUA_MARKER_NAMES: &'static [&str] = &["lua", "_lua"];
+const VALID_LUA_MARKER_NAMES: &[&str] = &["lua", "_lua"];
 fn is_lua_marker_arg(arg: &syn::FnArg) -> bool {
     match *arg {
         syn::FnArg::Typed(ref tp) => {
@@ -109,5 +109,5 @@ pub fn expand(meta: LuaFunctionMeta, item: syn::Item) -> Result<TokenStream, dar
         ..sig.clone()
     };
     func.sig = rewritten_sig;
-    return Ok(func.into_token_stream());
+    Ok(func.into_token_stream())
 }
