@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 # panic in const contexts ;)
 rust-version = "1.57"
+license = "MIT"
 
 [dependencies]
 luao3-macros = { version = "0.1", path = "lib/macros" }
