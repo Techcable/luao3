@@ -9,7 +9,7 @@ mod example1 {
     use mlua::prelude::*;
     
     #[derive(Debug, FromLua, ToLua)]
-    struct Foo {
+    pub struct Foo {
         foo: String,
         #[lua(default)]
         bar: Vec<String>

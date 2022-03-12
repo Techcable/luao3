@@ -1,9 +1,8 @@
 use darling::{FromMeta, ToTokens};
-use proc_macro::Punct;
 use proc_macro2::TokenStream;
 use syn::{parse_quote, FnArg, Token, PatType, punctuated::Punctuated};
 
-#[derive(darling::FromMeta, Debug)]
+#[derive(FromMeta, Debug)]
 pub struct LuaFunctionMeta {
     
 }
@@ -39,6 +38,7 @@ fn is_lua_marker_arg(arg: &syn::FnArg) -> bool {
 
 
 pub fn expand(meta: LuaFunctionMeta, item: syn::Item) -> Result<TokenStream, darling::Error> {
+    let LuaFunctionMeta { } = meta;
     let mut func = match item {
         syn::Item::Fn(func) => func,
         _ => return Err(darling::Error::custom("Expected a function item (`fn ...`)"))
@@ -51,9 +51,8 @@ pub fn expand(meta: LuaFunctionMeta, item: syn::Item) -> Result<TokenStream, dar
     require_matches!(sig.abi, None);
     require_matches!(sig.variadic, None);
     let syn::Signature {
-        ref ident,
         ref generics,
-        paren_token: _, fn_token,
+        paren_token: _, fn_token: _,
         ref inputs,
         ..
     } = *sig;

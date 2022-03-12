@@ -1,11 +1,11 @@
 use syn::{parse_quote, parse_quote_spanned, DeriveInput, spanned::Spanned};
 use proc_macro2::{TokenStream, Ident, Span};
+use darling::{FromDeriveInput};
 use quote::{quote, quote_spanned};
 
 #[derive(darling::FromField, Debug)]
 pub struct ToLuaField {
     ident: Option<syn::Ident>,
-    ty: syn::Type,
 }
 
 trait FieldAccess {
@@ -21,7 +21,7 @@ struct DestructureFieldAccess;
 impl DestructureFieldAccess {
     pub fn destructure(
         &self,
-        fields: darling::ast::Fields<ToLuaField>
+        fields: &darling::ast::Fields<ToLuaField>
     ) -> Result<TokenStream, darling::Error> {
         Ok(match fields.style {
             darling::ast::Style::Unit => quote!(),
@@ -36,13 +36,13 @@ impl DestructureFieldAccess {
             darling::ast::Style::Struct => {
                 let field_names = fields.fields.iter()
                     .map(|fd| fd.ident.as_ref().unwrap());
-                quote!({ #(ref #field_names,)* })
+                quote!({ #(#field_names,)* })
             }
         })
     }
 }
 impl FieldAccess for DestructureFieldAccess {
-    fn access(&self, member: syn::Member) -> Result<syn::Expr, darling::Expr> {
+    fn access(&self, member: syn::Member) -> Result<syn::Expr, darling::Error> {
         let name: Ident = match member {
             syn::Member::Named(ref name) => name.clone(),
             syn::Member::Unnamed(ref idx) => {
@@ -54,7 +54,7 @@ impl FieldAccess for DestructureFieldAccess {
 }
 
 impl ToLuaField {
-    pub fn expand(&self, idx: u32, access: &dyn FieldAccess) -> Result<TokenStream, darling::Error> {
+    fn expand(&self, idx: u32, access: &dyn FieldAccess, lua_table_name: &Ident) -> Result<TokenStream, darling::Error> {
         let member: syn::Member = match self.ident {
             Some(ref name) => parse_quote!(#name),
             None => parse_quote!(#idx)
@@ -65,7 +65,7 @@ impl ToLuaField {
         };
         let access = access.access(member)?;
         Ok(quote! {
-            lua_table.set(#key, &#access)?;
+            #lua_table_name.set(#key, #access)?;
         })
     }
 }
@@ -119,10 +119,10 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
     };
     let conversion_impl = match derive.data {
         darling::ast::Data::Struct(ref fields) => {
-            expand_variant(
+            expand_variant_into(
                 &SelfFieldAccess,
-                original_name.clone(),
-                fields
+                fields,
+                parse_quote!(lua_table)
             )?
         },
         darling::ast::Data::Enum(ref variants) => {
@@ -135,24 +135,21 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
             let variant_matches = variants.iter()
                 .filter(|var| !var.fields.is_unit())
                 .map(|var| {
-                    let expand = expand_variant(
-                        var.ident.clone(),
-                        &var.fields
+                    let expanded = expand_variant_into(
+                        &DestructureFieldAccess,
+                        &var.fields,
+                        parse_quote!(nested_table)
                     )?;
-                    let name = var.ident.to_string();
-                    Ok(quote!(#name => #original_name::#expand))
+                    let variant_name = &var.ident;
+                    let destructure = DestructureFieldAccess.destructure(&var.fields)?;
+                    Ok(quote!(#original_name::#variant_name #destructure => {
+                        let nested_table = lua.create_table()?;
+                        lua_table.set(stringify!(#variant_name), nested_table)?;
+                        #expanded
+                    }))
                }).collect::<Result<Vec<_>, darling::Error>>()?;
             quote! {
-                // TODO: Better error messages (consider both unit variants and regular enum variants)
-                let (variant, value) = luao3::parse_helpers::parse_enum_externally_tagged(
-                    lua,
-                    TYPE_NAME,
-                    lua_table,
-                )?;
-                let variant_name = match variant {
-                    luao3::parse_helpers::EnumVariant::Named(ref name) => name
-                };
-                match &**variant_name {
+                match &**self {
                     #(#variant_matches)*
                     _ => return Err(mlua::Error::FromLuaConversionError {
                         from: val_tp,
@@ -165,21 +162,31 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
         }
     };
     Ok(quote! {
-        impl #impl_generics mlua::FromLua<'lua> for #original_name #ty_generics #where_clause {
-            fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua mlua::Lua) -> mlua::Result<Self> {
-                const TYPE_NAME: &'static str = std::any::type_name::<#original_name #ty_generics>();
+        impl #impl_generics mlua::ToLua<'lua> for #original_name #ty_generics #where_clause {
+            fn to_lua(self, lua: &'lua mlua::Lua) -> mlua::Result<mlua::Value<'lua>> {
+                let type_name: &'static str = std::any::type_name::<#original_name #ty_generics>();
                 #handle_unit_variants
-                let lua_table = luao3::parse_helpers::expect_table(lua_value, TYPE_NAME)?;
-                Ok(#conversion_impl)
+                let lua_table = lua.create_table()?;
+                #conversion_impl
+                Ok(mlua::Value::Table(lua_table))
             }
         }
     })
 }
 
-fn expand_variant(
+fn expand_variant_into(
     access: &dyn FieldAccess,
-    variant_name: Ident,
-    fields: &darling::ast::Fields<FromLuaField>
+    fields: &darling::ast::Fields<ToLuaField>,
+    lua_table_name: Ident
 ) -> Result<TokenStream, darling::Error> {
-    todo!()
+    if matches!(fields.style, darling::ast::Style::Unit) {
+        return Ok(quote!());
+    }
+    let stmts = fields.iter().enumerate()
+        .map(|(idx, fd)| {
+            fd.expand(idx as u32, access, &lua_table_name)
+        })
+        .collect::<Result<Vec<_>, darling::Error>>()?;
+    Ok(quote!(#(#stmts)*))
+
 }
