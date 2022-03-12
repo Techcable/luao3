@@ -2,9 +2,9 @@ luao3
 =====
 Lua bindings for Rust, oriented around macros.
 
-Modeled loosely after [PyO3](https://pyo3.rs/).
+Modeled loosely after [PyO3](https://pyo3.rs/). Based on [mlua](https://docs.rs/mlua).
 
-Currently, based on [mlua](https://docs.rs/mlua).
+**WARNING**: This software is *ALPHA* quality. Expect breaking changes and API removals/additions.
 
 ## Examples
 ```rust
