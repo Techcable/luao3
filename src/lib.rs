@@ -3,5 +3,6 @@
 
 pub mod parse_helpers;
 pub mod prelude;
+pub mod tostring;
 
 pub use luao3_macros::*;

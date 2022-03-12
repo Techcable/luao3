@@ -13,3 +13,5 @@ darling = "0.13"
 quote = "1"
 proc-macro-kwargs = "0.1"
 indexmap = "1"
+# Used for debugging
+prettyplease = "0.1"

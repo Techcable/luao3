@@ -13,12 +13,12 @@ pub struct FromLuaField {
 }
 
 impl FromLuaField {
-    pub fn expand(&self, idx: u32) -> TokenStream {
+    pub fn expand(&self, idx: u32, table_name: &Ident) -> TokenStream {
         let key = match self.ident {
             Some(ref name) => {
                 quote!(luao3::parse_helpers::TableKey::String(stringify!(#name)))
             }
-            None => quote!(luao3::parse_helpers::TableKey::Number(#idx)),
+            None => quote!(luao3::parse_helpers::TableKey::Number(#idx + 1)),
         };
         let ty = &self.ty;
         let conversion_ty = if self.is_default.is_some() {
@@ -29,7 +29,7 @@ impl FromLuaField {
         let primary_conversion = quote! {
             luao3::parse_helpers::parse_field::<#conversion_ty>(
                 lua, type_name,
-                &lua_table, #key
+                &#table_name, #key
             )?
         };
         if self.is_default.is_some() {
@@ -78,10 +78,10 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
                 .peekable();
             if match_unit_variants.peek().is_some() {
                 Some(quote! {
-                    if let mlua::Value::String(ref s) = lua_value {
+                    if let mlua::Value::String(ref sobj) = lua_value {
                         // TODO: Give more descriptive error if UTF8 conversion fails
-                        let variant_name = variant_name.to_str()?;
-                        match s {
+                        let variant_name = sobj.to_str()?;
+                        match variant_name {
                             #(#match_unit_variants,)*
                             _ => {}
                         }
@@ -93,8 +93,29 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
         } else {
             None
         };
+    let to_lua_table = quote! {
+        let lua_table = luao3::parse_helpers::expect_table(lua_value, type_name)?;
+    };
     let conversion_impl = match derive.data {
-        darling::ast::Data::Struct(ref fields) => expand_variant(original_name.clone(), fields)?,
+        darling::ast::Data::Struct(ref fields) => {
+            let expand = expand_variant(original_name.clone(), fields, &parse_quote!(lua_table))?;
+            quote! {
+                #to_lua_table
+                Ok(#expand)
+            }
+        }
+        darling::ast::Data::Enum(ref variants)
+            if variants.iter().all(|var| var.fields.is_unit()) =>
+        {
+            quote! {
+                Err(mlua::Error::FromLuaConversionError {
+                    from: lua_value.type_name(),
+                    to: type_name,
+                    // NOTE: Unit variants are parsed as strings
+                    message: Some("Unknown variant name".into())
+                })
+            }
+        }
         darling::ast::Data::Enum(ref variants) => {
             /*
              * TODO: We need a better way to differentiate enum variants
@@ -106,28 +127,36 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
                 .iter()
                 .filter(|var| !var.fields.is_unit())
                 .map(|var| {
-                    let expand = expand_variant(var.ident.clone(), &var.fields)?;
+                    let expand = expand_variant(
+                        var.ident.clone(),
+                        &var.fields,
+                        &parse_quote!(nested_table),
+                    )?;
                     let name = var.ident.to_string();
-                    Ok(quote!(#name => #original_name::#expand))
+                    Ok(quote!(#name => Ok(#original_name::#expand)))
                 })
                 .collect::<Result<Vec<_>, darling::Error>>()?;
             quote! {
+                use mlua::{FromLua, ToLua};
+                #to_lua_table
                 // TODO: Better error messages (consider both unit variants and regular enum variants)
-                let (variant, value) = luao3::parse_helpers::parse_enum_externally_tagged(
+                let (variant, nested_value) = luao3::parse_helpers::parse_enum_externally_tagged(
                     lua,
                     type_name,
-                    lua_table,
+                    &lua_table,
                 )?;
                 let variant_name = match variant {
                     luao3::parse_helpers::EnumVariant::Named(ref name) => name
                 };
+                // Indicate this is the *nested* portion
+                let nested_table = luao3::parse_helpers::expect_table(nested_value, type_name)?;
                 match &**variant_name {
-                    #(#variant_matches)*
+                    #(#variant_matches,)*
                     _ => return Err(mlua::Error::FromLuaConversionError {
-                        from: val_tp,
-                        to: target_type,
+                        from: "table",
+                        to: type_name,
                         // NOTE: Unit variants are parsed as strings
-                        message: Some(format!("Unknown variant name: {variant_name}"))
+                        message: Some(format!("Unknown variant name: {}", variant_name))
                     })
                 }
             }
@@ -138,8 +167,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
             fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua mlua::Lua) -> mlua::Result<Self> {
                 let type_name: &'static str = std::any::type_name::<#original_name #ty_generics>();
                 #handle_unit_variants
-                let lua_table = luao3::parse_helpers::expect_table(lua_value, type_name)?;
-                Ok(#conversion_impl)
+                #conversion_impl
             }
         }
     })
@@ -148,12 +176,13 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
 fn expand_variant(
     variant_name: Ident,
     fields: &darling::ast::Fields<FromLuaField>,
+    table_name: &Ident,
 ) -> Result<TokenStream, darling::Error> {
     let field_conversions = fields
         .fields
         .iter()
         .enumerate()
-        .map(|(idx, fd)| fd.expand(idx as u32));
+        .map(|(idx, fd)| fd.expand(idx as u32, table_name));
     let field_names = fields.fields.iter().map(|fd| fd.ident.as_ref().unwrap());
     Ok(match fields.style {
         Style::Tuple => {

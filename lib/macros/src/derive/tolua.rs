@@ -58,11 +58,11 @@ impl ToLuaField {
     ) -> Result<TokenStream, darling::Error> {
         let member: syn::Member = match self.ident {
             Some(ref name) => parse_quote!(#name),
-            None => parse_quote!(#idx),
+            None => syn::Member::from(idx as usize),
         };
         let key = match self.ident {
             Some(ref name) => quote_spanned!(name.span() => stringify!(#name)),
-            None => quote!(#idx),
+            None => quote!(#idx + 1),
         };
         let access = access.access(member)?;
         Ok(quote! {
@@ -121,7 +121,17 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
         };
     let conversion_impl = match derive.data {
         darling::ast::Data::Struct(ref fields) => {
-            expand_variant_into(&SelfFieldAccess, fields, parse_quote!(lua_table))?
+            let expanded = expand_variant_into(&SelfFieldAccess, fields, parse_quote!(lua_table))?;
+            quote! {
+                let lua_table = lua.create_table()?;
+                #expanded
+                Ok(mlua::Value::Table(lua_table))
+            }
+        }
+        darling::ast::Data::Enum(ref variants)
+            if variants.iter().all(|var| var.fields.is_unit()) =>
+        {
+            quote!(unreachable!())
         }
         darling::ast::Data::Enum(ref variants) => {
             /*
@@ -143,21 +153,18 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
                     let destructure = DestructureFieldAccess.destructure(&var.fields)?;
                     Ok(quote!(#original_name::#variant_name #destructure => {
                         let nested_table = lua.create_table()?;
-                        lua_table.set(stringify!(#variant_name), nested_table)?;
                         #expanded
+                        lua_table.set(stringify!(#variant_name), nested_table)?;
                     }))
                 })
                 .collect::<Result<Vec<_>, darling::Error>>()?;
             quote! {
-                match &**self {
+                let lua_table = lua.create_table()?;
+                match self {
                     #(#variant_matches)*
-                    _ => return Err(mlua::Error::FromLuaConversionError {
-                        from: val_tp,
-                        to: target_type,
-                        // NOTE: Unit variants are parsed as strings
-                        message: Some(format!("Unknown variant name: {variant_name}"))
-                    })
+                    _ => unreachable!("Should've already handled unit variants")
                 }
+                Ok(mlua::Value::Table(lua_table))
             }
         }
     };
@@ -166,9 +173,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
             fn to_lua(self, lua: &'lua mlua::Lua) -> mlua::Result<mlua::Value<'lua>> {
                 let type_name: &'static str = std::any::type_name::<#original_name #ty_generics>();
                 #handle_unit_variants
-                let lua_table = lua.create_table()?;
                 #conversion_impl
-                Ok(mlua::Value::Table(lua_table))
             }
         }
     })
