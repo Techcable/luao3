@@ -1,14 +1,12 @@
-use indexmap::IndexMap;
 use indexmap::map::Entry;
+use indexmap::IndexMap;
 use proc_macro2::{Ident, Span, TokenStream};
-use proc_macro_kwargs::{MacroKeywordArgs, parse_macro_arg_via_syn};
+use proc_macro_kwargs::{parse_macro_arg_via_syn, MacroKeywordArgs};
 use quote::{quote, quote_spanned};
-use syn::{
-    braced, Error, Expr, parse_quote_spanned, Path, Token,
-};
 use syn::parse::{Parse, ParseBuffer, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
+use syn::{braced, parse_quote_spanned, Error, Expr, Path, Token};
 
 use crate::utils;
 

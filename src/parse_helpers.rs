@@ -7,18 +7,17 @@ use std::fmt::Display;
 
 use mlua::{FromLua, Lua, Value};
 
-
 pub fn expect_table<'lua>(
     value: mlua::Value<'lua>,
-    target_type: &'static str
+    target_type: &'static str,
 ) -> mlua::Result<mlua::Table<'lua>> {
     match value {
         mlua::Value::Table(tb) => Ok(tb),
         _ => Err(mlua::Error::FromLuaConversionError {
             from: value.type_name(),
             to: target_type,
-            message: Some("Expected a table".into())
-        })
+            message: Some("Expected a table".into()),
+        }),
     }
 }
 
@@ -31,7 +30,7 @@ impl<'lua> mlua::ToLua<'lua> for TableKey {
     fn to_lua(self, lua: &'lua Lua) -> mlua::Result<Value<'lua>> {
         match self {
             TableKey::String(val) => val.to_lua(lua),
-            TableKey::Number(val) => val.to_lua(lua)
+            TableKey::Number(val) => val.to_lua(lua),
         }
     }
 }
@@ -46,21 +45,18 @@ impl Display for TableKey {
 
 #[derive(Clone, Debug)]
 pub enum EnumVariant {
-    Named(String)
+    Named(String),
 }
 
 pub fn parse_enum_externally_tagged<'lua>(
     _lua: &'lua mlua::Lua,
     target_type: &'static str,
-    lua_table: &mlua::Table<'lua>
+    lua_table: &mlua::Table<'lua>,
 ) -> mlua::Result<(EnumVariant, mlua::Value<'lua>)> {
-    let mut pairs = lua_table.clone()
-        .pairs::<String, mlua::Value<'lua>>();
+    let mut pairs = lua_table.clone().pairs::<String, mlua::Value<'lua>>();
     let (len, res) = match pairs.next().transpose()? {
-        Some((key, value)) => {
-            (1 + pairs.count(), Some((EnumVariant::Named(key), value)))
-        }
-        None => (0, None)
+        Some((key, value)) => (1 + pairs.count(), Some((EnumVariant::Named(key), value))),
+        None => (0, None),
     };
     if len == 1 {
         Ok(res.unwrap())
@@ -70,10 +66,9 @@ pub fn parse_enum_externally_tagged<'lua>(
             to: target_type,
             message: Some(format!(
                 "Externally tagged enum should have one field, but actually has {len}"
-            ))
+            )),
         })
     }
-
 }
 pub fn parse_field<'lua, T: FromLua<'lua>>(
     lua: &'lua mlua::Lua,
@@ -83,11 +78,9 @@ pub fn parse_field<'lua, T: FromLua<'lua>>(
 ) -> mlua::Result<T> {
     let val: mlua::Value<'lua> = lua_table.get(key)?;
     let val_tp = val.type_name();
-    T::from_lua(val, lua).map_err(|cause| {
-        mlua::Error::FromLuaConversionError {
-            from: val_tp,
-            to: target_type,
-            message: Some(format!("field {key}: {cause}"))
-        }
+    T::from_lua(val, lua).map_err(|cause| mlua::Error::FromLuaConversionError {
+        from: val_tp,
+        to: target_type,
+        message: Some(format!("field {key}: {cause}")),
     })
 }

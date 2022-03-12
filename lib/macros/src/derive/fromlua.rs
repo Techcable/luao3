@@ -1,8 +1,8 @@
-use darling::ast::{Style};
+use darling::ast::Style;
 use darling::FromDeriveInput;
-use proc_macro2::{TokenStream, Ident};
+use proc_macro2::{Ident, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{DeriveInput, parse_quote, parse_quote_spanned, spanned::Spanned};
+use syn::{parse_quote, parse_quote_spanned, spanned::Spanned, DeriveInput};
 
 #[derive(darling::FromField, Debug)]
 pub struct FromLuaField {
@@ -17,7 +17,7 @@ impl FromLuaField {
         let key = match self.ident {
             Some(ref name) => {
                 quote!(luao3::parse_helpers::TableKey::String(stringify!(#name)))
-            },
+            }
             None => quote!(luao3::parse_helpers::TableKey::Number(#idx)),
         };
         let ty = &self.ty;
@@ -50,13 +50,12 @@ pub struct FromLuaDerive {
 #[derive(darling::FromVariant, Debug)]
 pub struct FromLuaVariant {
     ident: Ident,
-    fields: darling::ast::Fields<FromLuaField>
+    fields: darling::ast::Fields<FromLuaField>,
 }
 
 pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
     let derive = FromLuaDerive::from_derive_input(&input)?;
-    let (_, ty_generics, where_clause)
-        = input.generics.split_for_impl();
+    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
     let mut impl_generics = input.generics.clone();
     if !impl_generics.params.iter().any(|param| {
         matches!(param, syn::GenericParam::Lifetime(ref lt)
@@ -66,39 +65,36 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
     }
     let (impl_generics, _, _) = impl_generics.split_for_impl();
     let original_name = &derive.ident;
-    let handle_unit_variants: Option<TokenStream> = if let darling::ast::Data::Enum(ref variants) = derive.data {
-        let mut match_unit_variants = variants.iter()
-            .filter(|var| var.fields.is_unit())
-            .map(|var| {
-                let text = var.ident.to_string();
-                let ident = &var.ident;
-                quote!(#text => return Ok(#original_name::#ident))
-            })
-            .peekable();
-        if match_unit_variants.peek().is_some() {
-            Some(quote! {
-                if let mlua::Value::String(ref s) = lua_value {
-                    // TODO: Give more descriptive error if UTF8 conversion fails
-                    let variant_name = variant_name.to_str()?;
-                    match s {
-                        #(#match_unit_variants,)*
-                        _ => {}
+    let handle_unit_variants: Option<TokenStream> =
+        if let darling::ast::Data::Enum(ref variants) = derive.data {
+            let mut match_unit_variants = variants
+                .iter()
+                .filter(|var| var.fields.is_unit())
+                .map(|var| {
+                    let text = var.ident.to_string();
+                    let ident = &var.ident;
+                    quote!(#text => return Ok(#original_name::#ident))
+                })
+                .peekable();
+            if match_unit_variants.peek().is_some() {
+                Some(quote! {
+                    if let mlua::Value::String(ref s) = lua_value {
+                        // TODO: Give more descriptive error if UTF8 conversion fails
+                        let variant_name = variant_name.to_str()?;
+                        match s {
+                            #(#match_unit_variants,)*
+                            _ => {}
+                        }
                     }
-                }
-            })
+                })
+            } else {
+                None
+            }
         } else {
             None
-        }
-    } else {
-        None
-    };
+        };
     let conversion_impl = match derive.data {
-        darling::ast::Data::Struct(ref fields) => {
-            expand_variant(
-                original_name.clone(),
-                fields
-            )?
-        },
+        darling::ast::Data::Struct(ref fields) => expand_variant(original_name.clone(), fields)?,
         darling::ast::Data::Enum(ref variants) => {
             /*
              * TODO: We need a better way to differentiate enum variants
@@ -106,16 +102,15 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
              * This is essentially the serde "Externally tagged" enum representation:
              * https://serde.rs/enum-representations.html#externally-tagged
              */
-            let variant_matches = variants.iter()
+            let variant_matches = variants
+                .iter()
                 .filter(|var| !var.fields.is_unit())
                 .map(|var| {
-                    let expand = expand_variant(
-                        var.ident.clone(),
-                        &var.fields
-                    )?;
+                    let expand = expand_variant(var.ident.clone(), &var.fields)?;
                     let name = var.ident.to_string();
                     Ok(quote!(#name => #original_name::#expand))
-               }).collect::<Result<Vec<_>, darling::Error>>()?;
+                })
+                .collect::<Result<Vec<_>, darling::Error>>()?;
             quote! {
                 // TODO: Better error messages (consider both unit variants and regular enum variants)
                 let (variant, value) = luao3::parse_helpers::parse_enum_externally_tagged(
@@ -152,12 +147,14 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream, darling::Error> {
 
 fn expand_variant(
     variant_name: Ident,
-    fields: &darling::ast::Fields<FromLuaField>
+    fields: &darling::ast::Fields<FromLuaField>,
 ) -> Result<TokenStream, darling::Error> {
-    let field_conversions = fields.fields.iter().enumerate()
+    let field_conversions = fields
+        .fields
+        .iter()
+        .enumerate()
         .map(|(idx, fd)| fd.expand(idx as u32));
-    let field_names = fields.fields.iter()
-        .map(|fd| fd.ident.as_ref().unwrap());
+    let field_names = fields.fields.iter().map(|fd| fd.ident.as_ref().unwrap());
     Ok(match fields.style {
         Style::Tuple => {
             quote!(#variant_name(#(#field_conversions,)*))
@@ -167,6 +164,6 @@ fn expand_variant(
                 #(#field_names : #field_conversions,)*
             })
         }
-        Style::Unit => quote!(#variant_name)
+        Style::Unit => quote!(#variant_name),
     })
 }

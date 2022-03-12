@@ -1,19 +1,18 @@
 use darling::{FromMeta, ToTokens};
 use proc_macro2::TokenStream;
-use syn::{parse_quote, FnArg, Token, PatType, punctuated::Punctuated};
+use syn::{parse_quote, punctuated::Punctuated, FnArg, PatType, Token};
 
 #[derive(FromMeta, Debug)]
-pub struct LuaFunctionMeta {
-    
-}
+pub struct LuaFunctionMeta {}
 
 macro_rules! require_matches {
-    ($value:expr, $target:pat) => (
+    ($value:expr, $target:pat) => {
         require_matches!(
-            $value, $target,
+            $value,
+            $target,
             format!("{} must not be {}", stringify!($value), stringify!($target))
         )
-    );
+    };
     ($value:expr, $target:pat, $msg:expr) => {{
         let value = &$value;
         if !matches!(value, $target) {
@@ -31,17 +30,20 @@ fn is_lua_marker_arg(arg: &syn::FnArg) -> bool {
                 &*tp.pat, syn::Pat::Ident(ref pat) if
                     VALID_LUA_MARKER_NAMES.iter().any(|name| pat.ident == name)
             )
-        },
-        _ => false
+        }
+        _ => false,
     }
 }
 
-
 pub fn expand(meta: LuaFunctionMeta, item: syn::Item) -> Result<TokenStream, darling::Error> {
-    let LuaFunctionMeta { } = meta;
+    let LuaFunctionMeta {} = meta;
     let mut func = match item {
         syn::Item::Fn(func) => func,
-        _ => return Err(darling::Error::custom("Expected a function item (`fn ...`)"))
+        _ => {
+            return Err(darling::Error::custom(
+                "Expected a function item (`fn ...`)",
+            ))
+        }
     };
     // Rewrite the signature (that's 99% of what we do)
     let sig = &func.sig;
@@ -52,17 +54,25 @@ pub fn expand(meta: LuaFunctionMeta, item: syn::Item) -> Result<TokenStream, dar
     require_matches!(sig.variadic, None);
     let syn::Signature {
         ref generics,
-        paren_token: _, fn_token: _,
+        paren_token: _,
+        fn_token: _,
         ref inputs,
         ..
     } = *sig;
     let mut rewritten_generics = generics.clone();
-    if !rewritten_generics.lifetimes().any(|lt| lt.lifetime.ident == "lua") {
+    if !rewritten_generics
+        .lifetimes()
+        .any(|lt| lt.lifetime.ident == "lua")
+    {
         rewritten_generics.params.push(parse_quote!('lua));
     }
     let mut original_arg_iter = inputs.iter().peekable();
     let mut rewritten_args: Punctuated<syn::FnArg, Token![,]> = Punctuated::new();
-    if original_arg_iter.peek().copied().map_or(false, is_lua_marker_arg) {
+    if original_arg_iter
+        .peek()
+        .copied()
+        .map_or(false, is_lua_marker_arg)
+    {
         rewritten_args.push(original_arg_iter.next().unwrap().clone());
     } else {
         rewritten_args.push(parse_quote!(__lua: &'lua mlua::Lua))
@@ -73,9 +83,10 @@ pub fn expand(meta: LuaFunctionMeta, item: syn::Item) -> Result<TokenStream, dar
         match remaining {
             FnArg::Receiver(ref arg) => {
                 return Err(darling::Error::custom("Unexpected reciever arg").with_span(arg));
-            },
+            }
             FnArg::Typed(PatType {
-                ty, pat,
+                ty,
+                pat,
                 attrs: _, //TODO
                 colon_token: _,
             }) => {
