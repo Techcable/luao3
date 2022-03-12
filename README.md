@@ -20,16 +20,16 @@ struct Foo {
 
 #[lua_function]
 pub fn bar(a: Foo) -> LuaResult<Foo> {
-    Foo {
+    Ok(Foo {
         foo: format!("baz{}", a.foo),
-        bar: vec!["foo", "baz", a.bar.get(0)
+        bar: vec!["foo".into(), "baz".into(), a.bar.get(0).cloned()
             .unwrap_or_else(|| "baz".into())]
-    }
+    })
 }
 
 #[lua_function]
 pub fn baz(txt: String) -> LuaResult<i32> {
-    txt.parse::<i32>()
+    txt.parse::<i32>().map_err(mlua::Error::external)
 }
 
 luao3::declare_simple_module! {
