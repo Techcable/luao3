@@ -1,6 +1,6 @@
 [package]
 name = "luao3"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Lua bindings for Rust, oriented around macros. Lossly inspired by pyo3, but based on mlua."
 repository = "https://github.com/Techcable/luao3"
@@ -17,7 +17,15 @@ version = "0.7"
 features = ["macros"]
 
 [features]
-# TODO: This is needed so IntellIJ will work :(
+# Rationale to have this as default is that we want a sensible default configuration.
+# Without this, the "default features" would cause mlua to error because you haven't selected
+# a specific lua version
+#
+# We want the default features to work correctly, even if it means selecting an undesirable
+# version.
+#
+# If you are not using Lua 5.4, please disable it by setting default-features = false
+# and selecting a different version.
 default = ["lua54"]
 luajit = ["mlua/luajit"]
 lua51 = ["mlua/lua51"]
