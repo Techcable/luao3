@@ -1,4 +1,4 @@
-luao3
+luao3 [![Crates.io](https://img.shields.io/crates/v/luao3)](https://crates.io/crates/luao3) [![docs.rs](https://img.shields.io/docsrs/luao3)](https://docs.rs/luao3)
 =====
 Lua bindings for Rust, oriented around macros.
 
