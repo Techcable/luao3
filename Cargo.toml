@@ -34,4 +34,6 @@ lua53 = ["mlua/lua53"]
 lua54 = ["mlua/lua54"]
 module = ["mlua/module"]
 
-[workspace]
+[package.metadata.docs.rs]
+# Use vendored mlua on docs.rs, because we want it to compile ;)
+features = ["mlua/vendored"]
