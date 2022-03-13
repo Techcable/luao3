@@ -1,6 +1,6 @@
 [package]
 name = "luao3"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Lua bindings for Rust, oriented around macros. Lossly inspired by pyo3, but based on mlua."
 repository = "https://github.com/Techcable/luao3"
@@ -33,7 +33,9 @@ lua52 = ["mlua/lua52"]
 lua53 = ["mlua/lua53"]
 lua54 = ["mlua/lua54"]
 module = ["mlua/module"]
+# vendored source for lua (see mlua docs)
+vendored = ["mlua/vendored"]
 
 [package.metadata.docs.rs]
-# Use vendored mlua on docs.rs, because we want it to compile ;)
-features = ["mlua/vendored"]
+# Use vendored lua on docs.rs, because we want it to compile ;)
+features = ["vendored"]
