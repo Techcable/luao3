@@ -2,6 +2,9 @@
 name = "luao3"
 version = "0.1.0"
 edition = "2021"
+description = "Lua bindings for Rust, oriented around macros. Lossly inspired by pyo3, but based on mlua."
+repository = "https://github.com/Techcable/luao3"
+readme = "README.md"
 # panic in const contexts ;)
 rust-version = "1.57"
 license = "MIT"

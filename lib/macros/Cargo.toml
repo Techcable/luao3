@@ -1,5 +1,8 @@
 [package]
 name = "luao3-macros"
+description = "Macros/derive for luao3."
+repository = "https://github.com/Techcable/luao3"
+readme = "../../README.md"
 license = "MIT"
 version = "0.1.0"
 edition = "2021"
