@@ -1,6 +1,6 @@
 [package]
 name = "luao3"
-version = "0.1.1"
+version = "0.1.0"
 edition = "2021"
 description = "Lua bindings for Rust, oriented around macros. Lossly inspired by pyo3, but based on mlua."
 repository = "https://github.com/Techcable/luao3"
@@ -17,6 +17,8 @@ version = "0.7"
 features = ["macros"]
 
 [features]
+# TODO: This is needed so IntellIJ will work :(
+default = ["lua54"]
 luajit = ["mlua/luajit"]
 lua51 = ["mlua/lua51"]
 lua52 = ["mlua/lua52"]
